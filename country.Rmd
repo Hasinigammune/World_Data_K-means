@@ -1,0 +1,326 @@
+---
+title: '**Clustering for countries of the world data**'
+output:
+  pdf_document: default
+  html_document:
+    df_print: paged
+header-includes:
+- \usepackage{float}
+- \floatplacement{figure}{H}
+- \usepackage{bm}
+- \usepackage{longtable}
+- \usepackage{booktabs}
+- \usepackage{caption}
+- \captionsetup[figure]{font=scriptsize}
+- \captionsetup[table]{font=scriptsize}
+vignette: |
+  %\VignetteEngine{knitr::rmarkdown} %\VignetteIndexEntry{Foo}
+urlcolor: blue
+geometry: left=1cm,right=1cm,top=1cm,bottom=0.8cm
+always_allow_html: yes
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+options(xtable.comment=FALSE)
+```
+
+ The countries of the world data set (https://www.kaggle.com/fernandol/countries-of-the-world/version/1#countries%20of%20the%20world.csv) is a compilation of demographic information for all of the world’s countries and independent islands. It has 227 rows (countries and independent islands) and 20 columns (variables). In this project, we try to cluster countries  based on their demographic information. 
+
+```{r echo=FALSE, message=FALSE}
+country_data =  read.csv("countries of the world.csv",dec = ',')
+country = na.omit(country_data)
+country= country[,c(1,2,3,4,5,6,7,8,9,10)]
+#unique(country$Region)
+country$Region <- factor(country$Region, levels = unique(country$Region))
+#str(country)
+attach(country)
+country_sub=country[,3:10]
+```
+
+- Summary Statistics
+
+```{r echo=FALSE,results='asis'}
+library(xtable)
+xtable(summary(country_sub[,1:4]),caption = "Summary Statistics",digits = 2)
+xtable(summary(country_sub[,5:8]),caption = "Summary Statistics",digits = 2)
+```
+
+- Matrix scatterplot and Correlation matrix
+
+
+```{r echo=FALSE,warning=FALSE,message=FALSE,fig.align="center",out.width = "70%",fig.cap="Matrix scatterplot"}
+library(PerformanceAnalytics)
+chart.Correlation(country_sub, histogram = TRUE,)
+``` 
+
+```{r echo=FALSE,results='asis'}
+df=cor(country_sub)
+colnames(df)=row.names(df)=c("Population","Area","Pop..Density", "Coastline","Net.migration" , "Infant.mortality","GDP","Literacy")
+xtable(df, caption = "Correlation matrix")
+``` 
+
+
+- As the correlation between most of the variables are very low, therefore, rather than going with the correlation-based distance, we can use metric-based distance for clustering.
+- Also I would suggest standardizing the variables as they are in different scales and some have very high ranges.
+- The panel histograms shows that the distributions of most of the variables are highly  right skewed. 
+
+**Hierarchical Clustering with Complete linkage**
+
+```{r, echo=FALSE,fig.align="center",out.width="60%",fig.cap="Hierarchical Clustering with Complete linkage"}
+country.sc <- scale(country_sub)
+country.complete <- hclust(dist(country.sc), method = "complete")
+plot(country.complete, xlab = "", sub = "", 
+	cex = 0.7)
+abline(h=12
+       ,col="red")##cut the tree
+```
+
+
+```{r, echo=FALSE, results='asis'}
+clust<-cutree(country.complete, 4)
+t<-table(clust)
+xtable(t(t), caption = "Number of observations within each cluster (Hierarchical Clustering)")
+country.new<-cbind(country,clust)
+c1<-apply(country_sub[clust==1,],2,mean)
+c2<-apply(country_sub[clust==2,],2,mean)
+c3<-apply(country_sub[clust==3,],2,mean)
+c4<-apply(country_sub[clust==4,],2,mean)
+d<-as.data.frame(rbind(c1,c2,c3,c4))
+row.names(d)<-c("Cluster 1","Cluster 2","Cluster 3","Cluster 4")
+colnames(d) = c("Population","Area","Pop..Density", "Coastline","Net.migration" , "Infant.mortality","GDP","Literacy")
+xtable(d,caption = "Cluster means of the variables (Hierarchical Clustering)",table.placement="H",digits = 3)
+```
+
+```{r,echo=FALSE,fig.align="center",warning=FALSE,fig.cap="Matrix scatter plots"}
+# Plot data
+plot(country_sub,upper.panel=NULL,cex.main=0.8,col = c("red","blue","green")[country.new$clust],pch=c(1,1,1)[country.new$clust])
+legend("topright", legend=c("Cluster 1", "Cluster 2","Cluster 3"), 
+       col = c("red","blue","green") ,pch=c(1,1,1), cex=0.9)
+
+```
+
+```{r, warning=FALSE, message=FALSE, echo=FALSE, eval=FALSE}
+iso_codes <- read.csv("countries_continents_codes_flags_url.csv")
+iso_mapping <- setNames(iso_codes$alpha.3, iso_codes$country)
+country.new$Country <- trimws(country.new$Country)
+country.new$ISO_Code <- iso_mapping[country.new$Country]
+#country$cluster_comp <- clust
+#table(country$cluster)
+
+library(plotly)
+library(viridis)
+
+
+fig <- plot_geo(country.new, locations = ~ISO_Code, color = ~clust, text = ~Country,
+                color.palette = "Viridis", marker = list(line = list(color = "rgb(255,255,255)", width = 0.5)),
+                source = "world") %>%
+  layout(title = "Country Clusters for Hierrarchical clustering", geo = list(showframe = TRUE, showcoastlines = TRUE,
+                                                projection = list(type = "equirectangular")))
+
+fig
+
+
+```
+\begin{figure}[ht]
+        \centering
+        \includegraphics{hier.png}
+        \caption{Geographical Model for 4 clusters}
+        \label{fig:c4}
+        \end{figure}
+
+\newpage
+
+ **K-means clustering with k = 3**
+
+ 
+
+```{r, echo=FALSE,results='asis'}
+set.seed(100)
+km.out <- kmeans(country.sc, 3, nstart = 20)
+t1<-table(km.out$cluster)
+xtable(t(t1), caption = "Number of observations within each cluster (k=3)")
+country.new<-cbind(country,clust)
+k1<-apply(country_sub[km.out$cluster==1,],2,mean)
+k2<-apply(country_sub[km.out$cluster==2,],2,mean)
+k3<-apply(country_sub[km.out$cluster==3,],2,mean)
+
+d<-as.data.frame(rbind(k1,k2,k3))
+row.names(d)<-c("Cluster 1","Cluster 2","Cluster 3")
+colnames(d) = c("Population","Area","Pop..Density", "Coastline","Net.migration" , "Infant.mortality","GDP","Literacy")
+xtable(d,caption = "Cluster means of the variables for k-means clustering (k=3)",table.placement="H",digits = 3)
+kclust<-km.out$cluster
+country.new<-cbind(country.new,kclust)
+```
+```{r,echo=FALSE,fig.align="center",warning=FALSE,fig.cap="Matrix scatter plots",out.width="80%"}
+# Plot data
+plot(country_sub,upper.panel=NULL,cex.main=0.8,col = c("red","blue","green")[country.new$kclust],pch=c(1,1,1)[country.new$kclust])
+legend("topright", legend=c("Cluster 1","Cluster 2","Cluster 3"), 
+       col = c("red","blue","green") ,pch=c(1,1,1), cex=0.9)
+
+```
+
+- The clusters seems to be overlapping.
+
+
+```{r, warning=FALSE, message=FALSE, echo=FALSE, eval=FALSE}
+iso_codes <- read.csv("countries_continents_codes_flags_url.csv")
+iso_mapping <- setNames(iso_codes$alpha.3, iso_codes$country)
+country$Country <- trimws(country$Country)
+country$ISO_Code <- iso_mapping[country$Country]
+country$cluster_3 <- km.out$cluster
+#table(country$cluster)
+
+library(plotly)
+library(viridis)
+
+
+fig <- plot_geo(country, locations = ~ISO_Code, color = ~cluster_3, text = ~Country,
+                color.palette = "Viridis", marker = list(line = list(color = "rgb(255,255,255)", width = 0.5)),
+                source = "world") %>%
+  layout(title = "Country Clusters", geo = list(showframe = TRUE, showcoastlines = TRUE,
+                                                projection = list(type = "equirectangular")))
+
+fig
+
+
+```
+
+
+\begin{figure}[ht]
+        \centering
+        \includegraphics{cluster3.png}
+        \caption{Geographical Model for k=3}
+        \label{fig:k3}
+        \end{figure}
+
+\newpage
+
+ **K-means clustering with k = 4**
+
+```{r, echo=FALSE,results='asis'}
+set.seed(100)
+km.out <- kmeans(country.sc, 4, nstart = 20)
+t1<-table(km.out$cluster)
+xtable(t(t1), caption = "Number of observations within each cluster (k=4)")
+country.new<-cbind(country,km.out$cluster)
+k1<-apply(country_sub[km.out$cluster==1,],2,mean)
+k2<-apply(country_sub[km.out$cluster==2,],2,mean)
+k3<-apply(country_sub[km.out$cluster==3,],2,mean)
+k4<-apply(country_sub[km.out$cluster==4,],2,mean)
+d<-as.data.frame(rbind(k1,k2,k3,k4))
+colnames(d) = c("Population","Area","Pop..Density", "Coastline","Net.migration" , "Infant.mortality","GDP","Literacy")
+row.names(d)<-c("Cluster 1","Cluster 2","Cluster 3","Cluster 4")
+xtable(d,caption = "Cluster means of the variables for k-means clustering (k=4)",table.placement="H",digits = 3)
+```
+
+```{r,echo=FALSE,fig.align="center",warning=FALSE,fig.cap="Matrix scatter plots"}
+kclust<-km.out$cluster
+country.new<-cbind(country.new,kclust)
+# Plot data
+plot(country_sub,upper.panel=NULL,cex.main=0.8,col = c("red","blue","green","yellow")[country.new$kclust],pch=c(1,1,1,1)[country.new$kclust])
+legend("topright", legend=c("Cluster 1","Cluster 2","Cluster 3","Cluster 4"), 
+       col = c("red","blue","green","yellow") ,pch=c(1,1,1,1), cex=0.9)
+
+```
+
+
+```{r, warning=FALSE, message=FALSE, echo=FALSE, eval=FALSE}
+country$cluster_4 <- km.out$cluster
+#table(country$cluster)
+
+library(plotly)
+library(viridis)
+
+
+fig <- plot_geo(country, locations = ~ISO_Code, color = ~cluster_4, text = ~Country,
+                color.palette = "Viridis", marker = list(line = list(color = "rgb(255,255,255)", width = 0.5)),
+                source = "world") %>%
+  layout(title = "Country Clusters", geo = list(showframe = TRUE, showcoastlines = TRUE,
+                                                projection = list(type = "equirectangular")))
+
+fig
+
+
+```
+
+
+
+
+\begin{figure}[ht]
+        \centering
+        \includegraphics{country.png}
+        \caption{Geographical Model for k=4}
+        \label{fig:k4}
+        \end{figure}
+        
+\newpage
+       
+**K-means clustering with k = 5**
+
+```{r, echo=FALSE,results='asis'}
+set.seed(100)
+km.out <- kmeans(country.sc, 5, nstart = 20)
+t1<-table(km.out$cluster)
+xtable(t(t1), caption = "Number of observations within each cluster (k=4)")
+country.new<-cbind(country,km.out$cluster)
+k1<-apply(country_sub[km.out$cluster==1,],2,mean)
+k2<-apply(country_sub[km.out$cluster==2,],2,mean)
+k3<-apply(country_sub[km.out$cluster==3,],2,mean)
+k4<-apply(country_sub[km.out$cluster==4,],2,mean)
+k5<-apply(country_sub[km.out$cluster==5,],2,mean)
+d<-as.data.frame(rbind(k1,k2,k3,k4,k5))
+colnames(d) = c("Population","Area","Pop..Density", "Coastline","Net.migration" , "Infant.mortality","GDP","Literacy")
+row.names(d)<-c("Cluster 1","Cluster 2","Cluster 3","Cluster 4","Cluster 5")
+xtable(d,caption = "Cluster means of the variables for k-means clustering (k=5)",table.placement="H",digits = 3)
+```
+
+```{r,echo=FALSE,fig.align="center",warning=FALSE,fig.cap="Matrix scatter plots"}
+kclust<-km.out$cluster
+country.new<-cbind(country.new,kclust)
+# Plot data
+plot(country_sub,upper.panel=NULL,cex.main=0.8,col = c("red","blue","green","yellow","orange")[country.new$kclust],pch=c(1,1,1,1,1)[country.new$kclust])
+legend("topright", legend=c("Cluster 1","Cluster 2","Cluster 3","Cluster 4","Cluster 5"), 
+       col = c("red","blue","green","yellow","orange") ,pch=c(1,1,1,1,1), cex=0.9)
+
+```
+\newpage
+
+\begin{figure}[ht]
+        \centering
+        \includegraphics{cluster5.png}
+        \caption{Geographical Model for k=5}
+        \label{fig:k5}
+        \end{figure}
+
+```{r, warning=FALSE, message=FALSE, echo=FALSE, eval=FALSE}
+country$cluster_5 <- km.out$cluster
+#table(country$cluster)
+
+library(plotly)
+library(viridis)
+
+
+fig <- plot_geo(country, locations = ~ISO_Code, color = ~cluster_5, text = ~Country,
+                color.palette = "Viridis", marker = list(line = list(color = "rgb(255,255,255)", width = 0.5)),
+                source = "world") %>%
+  layout(title = "Country Clusters", geo = list(showframe = TRUE, showcoastlines = TRUE,
+                                                projection = list(type = "equirectangular")))
+
+fig
+
+
+```
+
+- For all values of k that we have used and also for the hierarchical clustering, we can see the five countries, Australia, Brazil, China, India, USA, which are having a very high area and higher population are in a seperate cluster. 
+
+
+```{r, echo=FALSE, warning=FALSE,message=FALSE,fig.cap="Plot of number of clusters vs total within cluster sum of squares", fig.align='center', out.width="80%"}
+library(factoextra)
+
+#create plot of number of clusters vs total within sum of squares
+fviz_nbclust(country_sub, kmeans, method = "wss")
+```
+- The scree plot also shows that the optimal number of clusters is 4.
+
+
